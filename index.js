@@ -4,9 +4,9 @@ module.exports = pixelmatch;
 
 function pixelmatch(img1, img2, output, width, height, options) {
 
-    if (img1.length !== img2.length) throw new Error('Image sizes do not match.');
-
     if (!options) options = {};
+
+    if (img1.length !== img2.length && options.ignoreSize !== true) throw new Error('Image sizes do not match.');
 
     var threshold = options.threshold === undefined ? 0.1 : options.threshold;
 
@@ -34,7 +34,13 @@ function pixelmatch(img1, img2, output, width, height, options) {
 
                 } else {
                     // found substantial difference not caused by anti-aliasing; draw it as red
-                    if (output) drawPixel(output, pos, 255, 0, 0);
+                    if (output) {
+                        if (options.detectAdds) {
+                            drawAdditionOrRemoval(img1, img2, pos, x, y, width, height, maxDelta, output);
+                        } else {
+                            drawPixel(output, pos, 255, 0, 0);
+                        }
+                    }
                     diff++;
                 }
 
@@ -48,6 +54,88 @@ function pixelmatch(img1, img2, output, width, height, options) {
 
     // return the number of different pixels
     return diff;
+}
+
+function drawAdditionOrRemoval(img1, img2, pos, x, y, width, height, maxDelta, output) {
+    if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
+        var pixel1 = getPixel(img1, pos),
+            pixel2 = getPixel(img2, pos),
+            img1PixelIsPartOfAColorContinuum = isPixelPartOfAColorContinuum(pixel1, img1, pos, width, maxDelta),
+            img2PixelIsPartOfAColorContinuum = isPixelPartOfAColorContinuum(pixel2, img2, pos, width, maxDelta);
+
+        if (img1PixelIsPartOfAColorContinuum && img2PixelIsPartOfAColorContinuum) {
+            drawMediumGrayPixel(pixel1, pixel2, pos, output);
+        } else if (img1PixelIsPartOfAColorContinuum) {
+            drawPixel(output, pos, 0, 220, 0);
+        } else if (img2PixelIsPartOfAColorContinuum) { // last and next pixel has not changed
+            drawPixel(output, pos, 220, 0, 0);
+        } else {
+            drawPixel(output, pos, 0, 0, 220);
+        }
+    } else {
+        drawPixel(output, pos, 0, 0, 220);
+    }
+}
+
+function drawMediumGrayPixel(pixel1, pixel2, pos, output) {
+    var mediumPixel = {
+            red: (pixel1.red + pixel2.red) / 2,
+            green: (pixel1.green + pixel2.green) / 2,
+            blue: (pixel1.blue + pixel2.blue) / 2
+        },
+        monochromeValue = rgb2y(mediumPixel.red, mediumPixel.green, mediumPixel.blue),
+        dimmedValue = blend(monochromeValue, 0.1);
+
+    drawPixel(output, pos, dimmedValue + 5, dimmedValue + 5, dimmedValue - 10);
+}
+
+function getPixel(img, pos) {
+    var alpha = img[ pos + 3] / 255,
+        red = blend(img[ pos + 0 ], alpha),
+        green = blend(img[ pos + 1 ], alpha),
+        blue = blend(img[ pos + 2 ], alpha);
+
+    return {red: red, green: green, blue: blue};
+}
+
+function pixelColorDelta(pixel1, pixel2) {
+    var y = rgb2y(pixel1.red, pixel1.green, pixel1.blue) - rgb2y(pixel2.red, pixel2.green, pixel2.blue),
+        i = rgb2i(pixel1.red, pixel1.green, pixel1.blue) - rgb2i(pixel2.red, pixel2.green, pixel2.blue),
+        q = rgb2q(pixel1.red, pixel1.green, pixel1.blue) - rgb2q(pixel2.red, pixel2.green, pixel2.blue);
+
+    return 0.5053 * y * y + 0.299 * i * i + 0.1957 * q * q;
+}
+
+function isPixelPartOfAColorContinuum(pixel, img, pos, width, maxDelta, comparisonDistance) {
+    var
+        // can be useful to cover case then both pixels are part of a color continuum
+        distanceToCompare = comparisonDistance || 1,
+        bytesDistance = distanceToCompare * 4,
+        leftPixel = getPixel(img, pos - bytesDistance);
+
+    if (pixelColorDelta(pixel, leftPixel) > maxDelta) {
+        return false;
+    }
+
+    var rightPixel = getPixel(img, pos + bytesDistance);
+
+    if (pixelColorDelta(pixel, rightPixel) > maxDelta) {
+        return false;
+    }
+
+    var topPixel = getPixel(img, pos - (width * bytesDistance));
+
+    if (pixelColorDelta(pixel, topPixel) > maxDelta) {
+        return false;
+    }
+
+    var bottomPixel = getPixel(img, pos + (width * bytesDistance));
+
+    if (pixelColorDelta(pixel, bottomPixel) > maxDelta) {
+        return false;
+    }
+
+    return true;
 }
 
 // check if a pixel is likely a part of anti-aliasing;

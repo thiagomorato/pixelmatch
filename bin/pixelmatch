@@ -6,12 +6,14 @@ var PNG = require('pngjs').PNG,
     match = require('../.');
 
 if (process.argv.length < 5) {
-    console.log('Usage: imagematch image1.png image2.png output.png [threshold=0.005] [includeAA=false]');
+    console.log('Usage: imagematch image1.png image2.png output.png [threshold=0.005] [includeAA=false] [detectAdds=true] [ignoreSize=true]');
     return;
 }
 
 var threshold = isNaN(+process.argv[5]) ? undefined : +process.argv[5],
-    includeAA = process.argv[6] === 'true';
+    includeAA = process.argv[6] === 'true',
+    detectAdds = process.argv[7] === 'true',
+    ignoreSize = process.argv[8] === 'true';
 
 var img1 = fs.createReadStream(process.argv[2]).pipe(new PNG()).on('parsed', doneReading);
 var img2 = fs.createReadStream(process.argv[3]).pipe(new PNG()).on('parsed', doneReading);
@@ -19,8 +21,8 @@ var img2 = fs.createReadStream(process.argv[3]).pipe(new PNG()).on('parsed', don
 function doneReading() {
     if (!img1.data || !img2.data) return;
 
-    if (img1.width !== img2.width || img1.height !== img2.height) {
-        console.log('Image dimensions do not match: %dx%d vs %dx%d',
+    if (img1.width !== img2.width || (ignoreSize === false && img1.height !== img2.height)) {
+        console.log('Image width do not match: %dx%d vs %dx%d',
             img1.width, img1.height, img2.width, img2.height);
         return;
     }
@@ -28,9 +30,12 @@ function doneReading() {
     var diff = new PNG({width: img1.width, height: img1.height});
 
     console.time('match');
+
     var diffs = match(img1.data, img2.data, diff.data, diff.width, diff.height, {
         threshold: threshold,
-        includeAA: includeAA
+        includeAA: includeAA,
+        detectAdds: detectAdds,
+        ignoreSize: ignoreSize
     });
     console.timeEnd('match');
 
