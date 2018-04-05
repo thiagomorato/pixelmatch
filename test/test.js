@@ -69,19 +69,22 @@ function detectAddsTest(imgPath1, imgPath2, diffPath, threshold, includeAA, expe
                     var mismatch = match(img1.data, img2.data, diff.data, diff.width, diff.height, {
                         threshold: threshold,
                         includeAA: includeAA,
-                        detectAdds: true
+                        discriminateChanges: true,
+                        detailedReturn: true
                     });
 
                     var mismatch2 = match(img2.data, img1.data, diffReverse.data, diff.width, diff.height, {
                         threshold: threshold,
                         includeAA: includeAA,
-                        detectAdds: true
+                        discriminateChanges: true,
+                        detailedReturn: true
                     });
 
                     t.same(diff.data, expectedDiff.data, 'diff image');
                     t.notSame(diff.data, diffReverse.data, 'reverse diff image - order matters here');
-                    t.same(mismatch, expectedMismatch, 'number of mismatched pixels');
-                    t.same(mismatch, mismatch2, 'number of mismatched pixels');
+                    t.same(mismatch.total, expectedMismatch, 'number of mismatched pixels');
+                    t.same(mismatch.total, mismatch2.total, 'number of mismatched pixels');
+                    t.same(mismatch.added, mismatch2.removed, 'number of mismatched pixels');
 
                     t.end();
                 });

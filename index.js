@@ -2,6 +2,12 @@
 
 module.exports = pixelmatch;
 
+var CHANGED_TO_ANOTHER_CONTINUUM = 0,
+    ADDED = 1,
+    REMOVED = 2,
+    CHANGED = 3,
+    CHANGED_AT_THE_BORDER = 4;
+
 function pixelmatch(img1, img2, output, width, height, options) {
 
     if (!options) options = {};
@@ -13,7 +19,11 @@ function pixelmatch(img1, img2, output, width, height, options) {
     // maximum acceptable square distance between two colors;
     // 35215 is the maximum possible value for the YIQ difference metric
     var maxDelta = 35215 * threshold * threshold,
-        diff = 0;
+        diff = {
+            added: 0,
+            removed: 0,
+            changed: 0
+        };
 
     // compare each pixel of one image against the other one
     for (var y = 0; y < height; y++) {
@@ -35,15 +45,41 @@ function pixelmatch(img1, img2, output, width, height, options) {
                 } else {
                     // found substantial difference not caused by anti-aliasing; draw it as red
                     if (output) {
-                        if (options.detectAdds) {
-                            drawAdditionOrRemoval(img1, img2, pos, x, y, width, height, maxDelta, output);
+                        if (options.discriminateChanges) {
+                            var
+                                pixel1 = getPixel(img1, pos),
+                                pixel2 = getPixel(img2, pos);
+
+                            switch (whatHappenedToThePixel(pixel1, pixel2, img1, img2, pos, x, y, width, height, maxDelta)) {
+                                case CHANGED_TO_ANOTHER_CONTINUUM:
+                                    drawMediumGrayPixel(pixel1, pixel2, pos, output);
+                                    diff.changed++;
+                                    break;
+                                case ADDED:
+                                    drawPixel(output, pos, 0, 220, 0);
+                                    diff.added++;
+                                    break;
+                                case REMOVED:
+                                    drawPixel(output, pos, 220, 0, 0);
+                                    diff.removed++;
+                                    break;
+                                case CHANGED:
+                                    drawPixel(output, pos, 0, 0, 220);
+                                    diff.changed++;
+                                    break;
+                                case CHANGED_AT_THE_BORDER:
+                                    drawPixel(output, pos, 0, 0, 220);
+                                    diff.changed++;
+                                    break;
+                            }
                         } else {
                             drawPixel(output, pos, 255, 0, 0);
+                            diff.changed++;
                         }
+                    } else {
+                        diff.changed++;
                     }
-                    diff++;
                 }
-
             } else if (output) {
                 // pixels are similar; draw background as grayscale image blended with white
                 var val = blend(grayPixel(img1, pos), 0.1);
@@ -52,28 +88,32 @@ function pixelmatch(img1, img2, output, width, height, options) {
         }
     }
 
+    diff.total = diff.added + diff.removed + diff.changed;
+
+    if (options.detailedReturn) {
+        return diff;
+    }
+
     // return the number of different pixels
-    return diff;
+    return diff.total;
 }
 
-function drawAdditionOrRemoval(img1, img2, pos, x, y, width, height, maxDelta, output) {
+function whatHappenedToThePixel(pixel1, pixel2, img1, img2, pos, x, y, width, height, maxDelta) {
     if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
-        var pixel1 = getPixel(img1, pos),
-            pixel2 = getPixel(img2, pos),
-            img1PixelIsPartOfAColorContinuum = isPixelPartOfAColorContinuum(pixel1, img1, pos, width, maxDelta),
+        var img1PixelIsPartOfAColorContinuum = isPixelPartOfAColorContinuum(pixel1, img1, pos, width, maxDelta),
             img2PixelIsPartOfAColorContinuum = isPixelPartOfAColorContinuum(pixel2, img2, pos, width, maxDelta);
 
         if (img1PixelIsPartOfAColorContinuum && img2PixelIsPartOfAColorContinuum) {
-            drawMediumGrayPixel(pixel1, pixel2, pos, output);
+            return CHANGED_TO_ANOTHER_CONTINUUM;
         } else if (img1PixelIsPartOfAColorContinuum) {
-            drawPixel(output, pos, 0, 220, 0);
+            return ADDED;
         } else if (img2PixelIsPartOfAColorContinuum) { // last and next pixel has not changed
-            drawPixel(output, pos, 220, 0, 0);
+            return REMOVED;
         } else {
-            drawPixel(output, pos, 0, 0, 220);
+            return CHANGED;
         }
     } else {
-        drawPixel(output, pos, 0, 0, 220);
+        return CHANGED_AT_THE_BORDER;
     }
 }
 
